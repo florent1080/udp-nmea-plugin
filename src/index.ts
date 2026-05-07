@@ -36,7 +36,6 @@ const isDestinationConfigs = (
 }
 
 module.exports = function (app: ServerAPI) {
-  let socket: dgram.Socket
   let onStop = new Array<OnStopHandler>()
   const setStatus = app.setPluginStatus
   const setStatusError = app.setPluginError
@@ -45,15 +44,18 @@ module.exports = function (app: ServerAPI) {
     app.debug(JSON.stringify(options))
     const address = options.ipaddress || options.broadcastAddress
     if (address && address != '-') {
-      socket = dgram.createSocket('udp4')
-      socket.bind(Number(address), function () {
-        socket.setBroadcast(true)
+      const sock = dgram.createSocket('udp4')
+      sock.bind(0, function () {
+        sock.setBroadcast(true)
+      })
+      onStop.push(() => {
+        try { sock.close() } catch (e) { /* already closed */ }
       })
 
       const delimiter = DELIMITERS[options.lineDelimiter || ''] || ''
       const send = (message: string) => {
         const msg = `${message}${delimiter}`
-        socket.send(msg, 0, msg.length, Number(options.port), address)
+        sock.send(msg, 0, msg.length, Number(options.port), address)
       }
       if (typeof options.nmea0183 === 'undefined' || options.nmea0183) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -100,10 +102,6 @@ module.exports = function (app: ServerAPI) {
     stop: () => {
       onStop.forEach(f => f())
       onStop = []
-      if (socket) {
-        socket.close()
-        socket = undefined
-      }
     },
     schema,
     id: 'udp-nmea-sender',
